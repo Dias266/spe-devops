@@ -1,0 +1,8 @@
+build
+.gradle
+.bloop
+.metals
+.vscode
+tests/results
+src/test
+docs

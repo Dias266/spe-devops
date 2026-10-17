@@ -7,17 +7,19 @@ const path = require('path');
 const app = express();
 app.use(cors());
 
+// Jason mind-inspector base URL; override with AGENT_BASE_URL (e.g. http://mas:3272 in Docker).
+const AGENT_BASE_URL = process.env.AGENT_BASE_URL || 'http://192.168.178.34:3272';
 const AGENT_URLS = [
-    'http://192.168.178.34:3272/agent-mind/vehicle_agent1/latest',
-    'http://192.168.178.34:3272/agent-mind/vehicle_agent2/latest',
-    'http://192.168.178.34:3272/agent-mind/vehicle_agent3/latest',
-    'http://192.168.178.34:3272/agent-mind/service_center_agent/latest',
-    'http://192.168.178.34:3272/agent-mind/fleet_coordinator_agent/latest'
-];
+    'vehicle_agent1',
+    'vehicle_agent2',
+    'vehicle_agent3',
+    'service_center_agent',
+    'fleet_coordinator_agent'
+].map((agent) => `${AGENT_BASE_URL}/agent-mind/${agent}/latest`);
 
 app.get('/api/fleet', async (req, res) => {
     try {
-        const responses = await Promise.all(AGENT_URLS.map(url => axios.get(url).catch(() => ({ data: '' }))));
+        const responses = await Promise.all(AGENT_URLS.map(url => axios.get(url, { timeout: 3000 }).catch(() => ({ data: '' }))));
         const parsedData = responses.map((r, i) => {
             const html = r.data || '';
             const extract = (pattern) => html.match(pattern)?.[1] || 'N/A';
@@ -65,7 +67,7 @@ app.get('/api/fleet', async (req, res) => {
 app.get('/api/ml-prediction', (req, res) => {
     try {
         // Use absolute path inside the container where the volume is mounted
-        const logPath = 'final_predictions_log.txt';
+        const logPath = process.env.PREDICTIONS_LOG || 'final_predictions_log.txt';
         
         if (!fs.existsSync(logPath)) {
             return res.status(404).json({ error: `Prediction log file not found at: ${logPath}` });

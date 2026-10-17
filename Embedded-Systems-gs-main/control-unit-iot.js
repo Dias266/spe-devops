@@ -15,7 +15,7 @@ app.use(express.json());
 
 //const MQTT_BROKER = 'mqtt://localhost:1883';
 const MQTT_BROKER = process.env.BROKER_URL || process.env.MQTT_URL || 'mqtt://host.docker.internal:1883';
-const SERIAL_PORT = '/dev/ttyUSB0'; // CHANGE THIS to your Arduino port!
+const SERIAL_PORT = process.env.SERIAL_PORT || '/dev/ttyUSB0'; // or set SERIAL_PORT to your Arduino port
 const SERIAL_BAUD_RATE = 9600;  // Match Arduino baud rate
 
 // MQTT SERVICE
@@ -89,9 +89,10 @@ class SerialService {
     
     initializeSerial() {
         try {
-            
-            this.handleSerialData(data);
-            
+            this.port = new SerialPort({ path: SERIAL_PORT, baudRate: SERIAL_BAUD_RATE });
+            this.parser = this.port.pipe(new ReadlineParser({ delimiter: '\n' }));
+            this.parser.on('data', (data) => this.handleSerialData(data));
+
             this.port.on('error', (err) => {
                 console.error('Serial error:', err.message);
                 console.log('Arduino not found - system will continue without verification');
@@ -243,7 +244,7 @@ const blockchainService = new BlockchainService();
 
 // HTTP API FOR DASHBOARD
 
-const PORT = 3002;
+const PORT = Number(process.env.HTTP_PORT) || 3002;
 
 app.get('/api/telemetry/latest', (req, res) => {
     res.json({
@@ -341,7 +342,7 @@ app.post('/api/publish-telemetry', (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`\n${'='.repeat(60)}`);
     console.log('IoT Control Unit - Backend Server');
     console.log(`${'='.repeat(60)}\n`);
@@ -352,5 +353,21 @@ app.listen(PORT, () => {
     console.log(` Dashboard: Open dashboard-iot.html in browser`);
     console.log(`\n${'='.repeat(60)}\n`);
 });
+
+// Graceful shutdown: Docker sends SIGTERM on "docker stop"; without this
+// handler Node ignores it as PID 1 and is killed only after a 10 s timeout.
+function shutdown(signal) {
+    console.log(`${signal} received, shutting down`);
+    server.close(() => process.exit(0));
+    if (mqttService.client) {
+        mqttService.client.end(true);
+    }
+    if (serialService.port && serialService.port.isOpen) {
+        serialService.port.close();
+    }
+    setTimeout(() => process.exit(0), 2000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 module.exports = { mqttService, dataStorageService };

@@ -83,7 +83,8 @@ public class FleetMASEnvironment extends Environment {
     private static final boolean USE_REAL_INTEGRATIONS = false;
 
     // DS project endpoint (from start-all.sh output)
-    private static final String DS_BACKEND_URL = "http://localhost:3002";
+    private static final String DS_BACKEND_URL =
+            System.getenv().getOrDefault("IOT_BACKEND_URL", "http://localhost:3002");
 
     private IoTStreamAdapter iotAdapter;
 
@@ -291,7 +292,7 @@ public class FleetMASEnvironment extends Environment {
 
             java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
             java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                    .uri(java.net.URI.create("http://localhost:3002/api/publish-telemetry"))
+                    .uri(java.net.URI.create(DS_BACKEND_URL + "/api/publish-telemetry"))
                     .header("Content-Type", "application/json")
                     .POST(java.net.http.HttpRequest.BodyPublishers.ofString(cleanPayload))
                     .build();

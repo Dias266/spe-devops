@@ -7,6 +7,24 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `Makefile` as one entry point: `make check` runs version check, lint and tests on all platforms; `make up` starts the stack.
+- Checkstyle for the Java multi-agent system, run by `./gradlew check`.
+- ESLint for the IoT control unit.
+- Node.js API tests (start the real server, no Arduino or broker needed) and c8 coverage with a JUnit report in CircleCI.
+- Dockerfiles for the multi-agent system, ML service and IoT control unit.
+- Delivery job: builds every image, smoke-tests the whole stack with docker compose, then pushes multi-arch images (linux/amd64, linux/arm64) to ghcr.io on `main` and release tags.
+- `docker-compose.yml` that runs the published images, with Mosquitto and a shared volume for ML predictions.
+- Graceful shutdown on SIGTERM for the IoT control unit.
+
+### Changed
+- Service addresses are configurable by environment variable (`IOT_BACKEND_URL`, `AGENT_BASE_URL`, `PREDICTIONS_LOG`, `DASHBOARD_LOG`, `SERIAL_PORT`, `HTTP_PORT`) instead of hard-coded IPs.
+- Dashboard backend uses `npm ci` with a lockfile and runs as a non-root user.
+
+### Fixed
+- IoT control unit never opened the Arduino serial port: the code referenced an undefined `data` variable (found by ESLint).
+- Dashboard `/api/fleet` hung forever when agents were unreachable; requests now time out after 3 s.
+
 ## [0.1.0] - 2026-10-17
 
 First tagged version of the integrated Vehicle Fleet Predictive Maintenance

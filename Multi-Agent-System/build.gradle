@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'jacoco'
+    id 'checkstyle'
 }
 
 group   = 'ise.mas'
@@ -69,4 +70,19 @@ task run(type: JavaExec, dependsOn: compileJava) {
 jar {
     archiveFileName = 'fleet-mas-env.jar'
     from sourceSets.main.output
+}
+
+// Linting: `./gradlew check` runs checkstyleMain and checkstyleTest; any violation fails the build.
+checkstyle {
+    toolVersion = '10.17.0'
+    configFile = file('config/checkstyle/checkstyle.xml')
+    maxWarnings = 0
+    ignoreFailures = false
+}
+
+// Copies the runtime dependencies next to the jar, so the Docker image can run
+// `java -cp 'lib/*' jason.infra.local.RunLocalMAS` without Gradle.
+tasks.register('copyRuntimeLibs', Copy) {
+    from configurations.runtimeClasspath
+    into layout.buildDirectory.dir('deps')
 }

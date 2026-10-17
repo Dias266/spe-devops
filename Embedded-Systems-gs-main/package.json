@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node control-unit-iot.js",
     "dev": "nodemon control-unit-iot.js",
-    "test": "node --test test/syntax.test.js"
+    "test": "node --test test/syntax.test.js test/api.test.js",
+    "test:ci": "mkdir -p reports && c8 --reporter=text --reporter=lcov --reporter=html --report-dir=coverage --all --include=control-unit-iot.js node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=reports/junit.xml test/syntax.test.js test/api.test.js",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@serialport/parser-readline": "^12.0.0",
@@ -16,6 +18,10 @@
     "serialport": "^12.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "c8": "^10.1.3",
+    "eslint": "^9.39.1",
+    "globals": "^16.5.0",
     "nodemon": "^3.0.1"
   },
   "license": "MIT"

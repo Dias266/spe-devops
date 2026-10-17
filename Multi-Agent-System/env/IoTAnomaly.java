@@ -1,8 +1,13 @@
 package env;
 
 class IoTAnomaly {
-    String vehicleId, anomalyType, severity;
+    String vehicleId;
+    String anomalyType;
+    String severity;
+
     IoTAnomaly(String v, String t, String s) {
-        vehicleId = v; anomalyType = t; severity = s;
+        vehicleId = v;
+        anomalyType = t;
+        severity = s;
     }
 }

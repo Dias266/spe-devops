@@ -1,9 +1,17 @@
 version: 2.1
 
+# CI/CD pipeline for the Vehicle Fleet Predictive Maintenance system.
+#
+#   every push / PR : check-version + lint, test and coverage on 3 platforms (JVM, Python, Node.js)
+#   main + vX.Y.Z   : build all images, smoke-test the whole stack with docker compose,
+#                     then push multi-arch images (linux/amd64, linux/arm64) to ghcr.io
+#
+# Needs two project environment variables (CircleCI -> Project Settings -> Environment Variables):
+#   GHCR_USER   your GitHub username
+#   GHCR_TOKEN  a GitHub personal access token with the write:packages scope
+
 orbs:
   node: circleci/node@5.1.0
-  python: circleci/python@2.1.1
-  docker: circleci/docker@2.4.0
 
 jobs:
   # 0. One version for the whole repo (VERSION, build.gradle, package.json, CHANGELOG, release tag)
@@ -16,24 +24,37 @@ jobs:
           name: Check versions match VERSION file and release tag
           command: ./scripts/check-version.sh
 
-  # ۱. بیلد و تست بخش جاوا (Multi-Agent System با Gradle و Java 21)
+  # 1. JVM: multi-agent system (Gradle, Java 21) - Checkstyle, JUnit, JaCoCo
   test-and-build-java:
     docker:
       - image: cimg/openjdk:21.0
+    working_directory: ~/project/Multi-Agent-System
     steps:
-      - checkout
+      - checkout:
+          path: ~/project
+      - restore_cache:
+          keys:
+            - gradle-v1-{{ checksum "build.gradle" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
       - run:
-          name: Run Gradle Build and Tests with Coverage (Jacoco)
+          name: Lint (Checkstyle), test (JUnit) and coverage (JaCoCo)
           command: |
-            cd Multi-Agent-System
             chmod +x gradlew
-            ./gradlew clean test jacocoTestReport --no-daemon
+            ./gradlew --no-daemon clean check jacocoTestReport
+      - save_cache:
+          key: gradle-v1-{{ checksum "build.gradle" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+          paths:
+            - ~/.gradle/caches
+            - ~/.gradle/wrapper
       - store_test_results:
-          path: Multi-Agent-System/build/test-results
+          path: build/test-results
       - store_artifacts:
-          path: Multi-Agent-System/build/reports/jacoco/test/html
+          path: build/reports/jacoco/test/html
+          destination: java-coverage
+      - store_artifacts:
+          path: build/reports/checkstyle
+          destination: java-checkstyle
 
-  # ۲. تست و لینت سرویس‌های پایتون و اجرای هوش مصنوعی (همراه با JRE و ورودی خودکار عدد 8 برای مدل Weka)
+  # 2. Python: ML prediction service (pip) - flake8, black, pytest, coverage
   test-and-lint-python:
     docker:
       - image: cimg/python:3.11
@@ -50,12 +71,12 @@ jobs:
           name: Install Python dependencies
           command: pip install -r requirements.txt -r requirements-dev.txt
       - run:
-          name: Run Python Linting (Flake8 & Black)
+          name: Lint (flake8, black)
           command: |
             flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
             black --check .
       - run:
-          name: Run Tests (incl. Weka model on instance 8) with Coverage
+          name: Test (pytest, incl. Weka model on instance 8) with coverage
           command: |
             mkdir -p test-results
             python -m pytest --junitxml=test-results/junit.xml --cov=. --cov-report=xml:coverage.xml --cov-report=html:htmlcov --cov-report=term
@@ -65,58 +86,126 @@ jobs:
           path: htmlcov
           destination: python-coverage
 
-  # ۳. تست و لینت سرویس‌های Node.js / IoT
+  # 3. Node.js: IoT control unit (npm) - ESLint, node:test, c8 coverage
   test-and-lint-node:
-    executor: node/default
+    docker:
+      - image: cimg/node:lts
+    working_directory: ~/project/Embedded-Systems-gs-main
     steps:
-      - checkout
+      - checkout:
+          path: ~/project
       - node/install-packages:
           pkg-manager: npm
-          app-dir: Embedded-Systems-gs-main
       - run:
-          name: Run Node.js Tests & Linting
-          command: |
-            cd Embedded-Systems-gs-main
-            npm test
-            npm run lint --if-present
+          name: Lint (ESLint)
+          command: npm run lint
+      - run:
+          name: Test (node:test) with coverage (c8)
+          command: npm run test:ci
+      - store_test_results:
+          path: reports
+      - store_artifacts:
+          path: coverage
+          destination: node-coverage
 
-  # ۴. انتشار خودکار و ارکستراسیون چندپلتفرمی (2+ target platforms: amd64, arm64)
+  # 4. Delivery: build images, smoke-test the stack, push multi-arch images to ghcr.io
   multi-platform-build-and-delivery:
-    docker:
-      - image: cimg/base:2023.06
+    machine:
+      image: ubuntu-2204:current
+    environment:
+      PLATFORMS: linux/amd64,linux/arm64
     steps:
       - checkout
-      - setup_remote_docker:
-          version: default
-          docker_layer_caching: true
       - run:
-          name: Setup Docker Buildx for Multi-Platform (linux/amd64, linux/arm64)
+          name: Check registry credentials
           command: |
-            docker run --privileged --rm tonistiigi/binfmt --install all
-            docker buildx create --name multiarch-builder --use
+            if [ -z "${GHCR_USER:-}" ] || [ -z "${GHCR_TOKEN:-}" ]; then
+              echo "GHCR_USER / GHCR_TOKEN are not set."
+              echo "Add them in CircleCI -> Project Settings -> Environment Variables."
+              exit 1
+            fi
+      - run:
+          name: Work out image names and tags
+          command: |
+            OWNER=$(echo "$CIRCLE_PROJECT_USERNAME" | tr '[:upper:]' '[:lower:]')
+            echo "export IMAGE_PREFIX=ghcr.io/${OWNER}/spe" >> "$BASH_ENV"
+            if [ -n "${CIRCLE_TAG:-}" ]; then
+              echo "export TAG=${CIRCLE_TAG#v}" >> "$BASH_ENV"
+            else
+              echo "export TAG=sha-${CIRCLE_SHA1:0:7}" >> "$BASH_ENV"
+            fi
+      - run:
+          name: Show what will be published
+          command: echo "Publishing ${IMAGE_PREFIX}-<service>:${TAG} and :latest for ${PLATFORMS}"
+      - run:
+          name: Log in to GitHub Container Registry
+          command: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+      - run:
+          name: Build all images (linux/amd64)
+          command: docker compose build
+      - run:
+          name: Smoke test the whole stack with docker compose
+          command: |
+            docker compose up -d
+            # The ML service predicts once and exits; its exit code must be 0.
+            docker compose wait ml-service
+            curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://localhost:3002/api/telemetry/latest
+            echo
+            curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://localhost:3000/api/ml-prediction | tee /tmp/prediction.json
+            echo
+            grep -q '"decision"' /tmp/prediction.json
+            curl -fsS --retry 15 --retry-delay 2 --retry-connrefused -o /dev/null http://localhost:8080/
+            sleep 10
+            test -n "$(docker compose ps -q --status running mas)" || { echo "mas container is not running"; exit 1; }
+            echo "Smoke test passed"
+      - run:
+          name: Container logs (on failure)
+          when: on_fail
+          command: docker compose logs --no-color --tail=100
+      - run:
+          name: Stop the stack
+          when: always
+          command: docker compose down -v
+      - run:
+          name: Set up Docker Buildx with QEMU for multi-arch builds
+          command: |
+            docker run --privileged --rm tonistiigi/binfmt --install arm64
+            docker buildx create --name spe-builder --use
             docker buildx inspect --bootstrap
       - run:
-          name: Build and Push All Service Containers Across Multiple Platforms
+          name: Build and push multi-arch images
+          no_output_timeout: 30m
           command: |
-            docker buildx build --platform linux/amd64,linux/arm64 -t your-registry/multi-agent-system:latest --push ./Multi-Agent-System || true
-            docker buildx build --platform linux/amd64,linux/arm64 -t your-registry/embedded-system-service:latest --push . || true
-            docker buildx build --platform linux/amd64,linux/arm64 -t your-registry/ml-service:latest --push ./ML-model || true
+            set -e
+            push() {
+              docker buildx build --platform "$PLATFORMS" \
+                --label "org.opencontainers.image.source=https://github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}" \
+                --label "org.opencontainers.image.version=${TAG}" \
+                --label "org.opencontainers.image.revision=${CIRCLE_SHA1}" \
+                --label "org.opencontainers.image.licenses=MIT" \
+                -t "${IMAGE_PREFIX}-$1:${TAG}" -t "${IMAGE_PREFIX}-$1:latest" \
+                --push "$2"
+            }
+            push iot-control-unit   ./Embedded-Systems-gs-main
+            push mas                ./Multi-Agent-System
+            push ml-service         ./ML-model
+            push dashboard-backend  ./MAS_system_node_server_on-main/back/backend
+            push dashboard-frontend ./MAS_system_node_server_on-main/back/frontend
 
 workflows:
-  version: 2
   complete-devops-pipeline:
     jobs:
       # Release tags (v1.2.3) are not built by CircleCI unless every job opts in.
       - check-version:
-          filters: &all-branches-and-release-tags
+          filters: &release-tags
             tags:
               only: /^v\d+\.\d+\.\d+$/
       - test-and-build-java:
-          filters: *all-branches-and-release-tags
+          filters: *release-tags
       - test-and-lint-python:
-          filters: *all-branches-and-release-tags
+          filters: *release-tags
       - test-and-lint-node:
-          filters: *all-branches-and-release-tags
+          filters: *release-tags
       - multi-platform-build-and-delivery:
           requires:
             - check-version

@@ -8,3 +8,8 @@ htmlcov/
 test-results/
 build/
 .gradle/
+coverage/
+reports/
+.vscode/
+.bloop/
+.metals/

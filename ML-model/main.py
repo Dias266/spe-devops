@@ -10,8 +10,10 @@ DATA_FILE = "data.arff"
 DEFAULT_JAR_FILE = "weka.jar"
 TEMPLATE_FILE = "training_template.arff"
 LOG_FILE = "final_predictions_log.txt"
-LOG_FILE_dashboard = (
-    "../MAS_system_node_server_on-main/back/backend/final_predictions_log.txt"
+# Shared with the dashboard backend; in Docker both mount the same volume.
+LOG_FILE_dashboard = os.environ.get(
+    "DASHBOARD_LOG",
+    "../MAS_system_node_server_on-main/back/backend/final_predictions_log.txt",
 )
 
 

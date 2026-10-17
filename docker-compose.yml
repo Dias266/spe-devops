@@ -1,58 +1,74 @@
-services:
-  embedded-system-service:
-    image: python:3.9-alpine
-    working_dir: /app/Embedded-Systems-gs-main
-    volumes:
-      - .:/app
-    environment:
-      - MQTT_HOST=host.docker.internal
-      - BROKER_URL=mqtt://host.docker.internal:1883
-      - MQTT_URL=mqtt://host.docker.internal:1883
-    command: >
-      sh -c "apk add --no-cache nodejs npm && npm install && node control-unit-iot.js & python3 -m http.server 8081"
-    ports:
-      - "8081:8081"
-      - "3002:3002"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      
-  ml-service:
-    image: python:3.9-slim
-    working_dir: /app/ML-model
-    volumes:
-      - .:/app
-    command: >
-      bash -c "apt-get update && apt-get install -y default-jre && echo '8' | python3 main.py"
-
-  with-red-service:
-    image: docker:cli
-    working_dir: /app/with-red
-    volumes:
-      - type: bind
-        source: ./with-red
-        target: /app/with-red
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: sh -c "apk add --no-cache docker-compose && docker compose -f docker-compose.yml down --remove-orphans && docker compose -f docker-compose.yml up"
+# Runs the whole system from the images CircleCI publishes to ghcr.io.
 #
-#  multi-agent-system-service:
-#    image: eclipse-temurin:21-jdk-jammy
-#    working_dir: /app/Multi-Agent-System
-#    volumes:
-#      - .:/app
-#    command: ./gradlew run
+#   docker compose pull && docker compose up -d     # use the published images
+#   docker compose up -d --build                    # or build them locally
+#
+# IMAGE_PREFIX and TAG pick which images to run (defaults: Dias266's latest).
 
-  mas-system-service:
-    image: docker:cli
-    working_dir: /app/back
+x-image-prefix: &prefix ${IMAGE_PREFIX:-ghcr.io/dias266/spe}
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
     volumes:
-      - type: bind
-        source: ./MAS_system_node_server_on-main/back
-        target: /app/back
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  iot-control-unit:
+    image: ${IMAGE_PREFIX:-ghcr.io/dias266/spe}-iot-control-unit:${TAG:-latest}
+    build: ./Embedded-Systems-gs-main
     environment:
-      COMPOSE_PROJECT_NAME: mas_back
-    command: >
-      sh -c "
-        apk add --no-cache docker-compose &&
-        docker compose up --build
-      "
+      BROKER_URL: mqtt://mosquitto:1883
+    ports:
+      - "3002:3002"
+    depends_on:
+      - mosquitto
+
+  mas:
+    image: ${IMAGE_PREFIX:-ghcr.io/dias266/spe}-mas:${TAG:-latest}
+    build: ./Multi-Agent-System
+    environment:
+      IOT_BACKEND_URL: http://iot-control-unit:3002
+    depends_on:
+      - iot-control-unit
+
+  ml-service:
+    image: ${IMAGE_PREFIX:-ghcr.io/dias266/spe}-ml-service:${TAG:-latest}
+    build: ./ML-model
+    environment:
+      INSTANCE: "8"
+      DASHBOARD_LOG: /shared/final_predictions_log.txt
+    volumes:
+      - predictions:/shared
+    restart: "no"
+
+  dashboard-backend:
+    image: ${IMAGE_PREFIX:-ghcr.io/dias266/spe}-dashboard-backend:${TAG:-latest}
+    build: ./MAS_system_node_server_on-main/back/backend
+    environment:
+      AGENT_BASE_URL: http://mas:3272
+      PREDICTIONS_LOG: /shared/final_predictions_log.txt
+    volumes:
+      - predictions:/shared
+    ports:
+      - "3000:3000"
+
+  dashboard-frontend:
+    image: ${IMAGE_PREFIX:-ghcr.io/dias266/spe}-dashboard-frontend:${TAG:-latest}
+    build: ./MAS_system_node_server_on-main/back/frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - dashboard-backend
+
+  node-red:
+    image: nodered/node-red:4.0
+    ports:
+      - "1880:1880"
+    volumes:
+      - nodered_data:/data
+
+volumes:
+  predictions:
+  nodered_data:

@@ -106,9 +106,12 @@ There is **one version for the whole repository**, stored in `VERSION`.
 
 ## 6. Running the checks locally
 
+Run exactly what CI runs on a pull request before you push:
+
 ```bash
-./scripts/check-version.sh
-(cd Multi-Agent-System && ./gradlew test jacocoTestReport)
-(cd ML-model && python -m pytest)
-(cd Embedded-Systems-gs-main && npm ci && npm test)
+make install   # once
+make check     # version check + lint + tests on all three platforms
+make help      # all targets
 ```
+
+To run the whole system in Docker: `make up` (stop with `make down`).

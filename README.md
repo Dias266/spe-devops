@@ -67,6 +67,32 @@ The dashboard relies on lightweight CSS variables (`var(--accent)`, `var(--warn)
 
 ---
 
+## ⚙️ Build, test and run
+
+Everything goes through the `Makefile` (needs Java 21, Python 3.11, Node.js 20+ and Docker):
+
+```bash
+make install   # install dependencies for JVM, Python and Node.js
+make check     # version check, lint and tests with coverage - same as CI
+make up        # build and start the whole stack with docker compose
+```
+
+Or run the published images without building: `docker compose pull && docker compose up -d`.
+
+| Service | Port | Image |
+| --- | --- | --- |
+| IoT control unit (Node.js) | 3002 | `ghcr.io/dias266/spe-iot-control-unit` |
+| Multi-agent system (Java/Jason) | - | `ghcr.io/dias266/spe-mas` |
+| ML prediction (Python/Weka) | - | `ghcr.io/dias266/spe-ml-service` |
+| Dashboard backend | 3000 | `ghcr.io/dias266/spe-dashboard-backend` |
+| Dashboard frontend | 8080 | `ghcr.io/dias266/spe-dashboard-frontend` |
+| MQTT broker (Mosquitto) | 1883 | `eclipse-mosquitto:2` |
+| Node-RED | 1880 | `nodered/node-red:4.0` |
+
+CI/CD runs on CircleCI: see [`.circleci/config.yml`](.circleci/config.yml).
+
+---
+
 ## 🤝 Contributing
 
 We use trunk-based development with a rebasing policy (linear history on `main`),
