@@ -1,6 +1,6 @@
 {
   "name": "iot-control-unit",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "IoT Control Unit for Vehicle Telematics",
   "main": "control-unit-iot.js",
   "scripts": {
@@ -17,5 +17,6 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
-  }
+  },
+  "license": "MIT"
 }

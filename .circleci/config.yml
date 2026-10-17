@@ -6,6 +6,16 @@ orbs:
   docker: circleci/docker@2.4.0
 
 jobs:
+  # 0. One version for the whole repo (VERSION, build.gradle, package.json, CHANGELOG, release tag)
+  check-version:
+    docker:
+      - image: cimg/node:lts
+    steps:
+      - checkout
+      - run:
+          name: Check versions match VERSION file and release tag
+          command: ./scripts/check-version.sh
+
   # ۱. بیلد و تست بخش جاوا (Multi-Agent System با Gradle و Java 21)
   test-and-build-java:
     docker:
@@ -96,14 +106,25 @@ workflows:
   version: 2
   complete-devops-pipeline:
     jobs:
-      - test-and-build-java
-      - test-and-lint-python
-      - test-and-lint-node
+      # Release tags (v1.2.3) are not built by CircleCI unless every job opts in.
+      - check-version:
+          filters: &all-branches-and-release-tags
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+      - test-and-build-java:
+          filters: *all-branches-and-release-tags
+      - test-and-lint-python:
+          filters: *all-branches-and-release-tags
+      - test-and-lint-node:
+          filters: *all-branches-and-release-tags
       - multi-platform-build-and-delivery:
           requires:
+            - check-version
             - test-and-build-java
             - test-and-lint-python
             - test-and-lint-node
           filters:
             branches:
               only: main
+            tags:
+              only: /^v\d+\.\d+\.\d+$/

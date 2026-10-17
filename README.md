@@ -69,14 +69,14 @@ The dashboard relies on lightweight CSS variables (`var(--accent)`, `var(--warn)
 
 ## 🤝 Contributing
 
-1. Fork the project repository.
-2. Create your targeted feature branch (`git checkout -b feature/NewTelemetry`).
-3. Commit your layout updates (`git commit -m 'Add NewTelemetry tracking component'`).
-4. Push your local branch (`git push origin feature/NewTelemetry`).
-5. Submit a comprehensive Pull Request.
+We use trunk-based development with a rebasing policy (linear history on `main`),
+Conventional Commits and Semantic Versioning. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for branch names, the pull request rules and how to cut a release.
+
+Current version: see [VERSION](VERSION) and [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+Released under the [MIT License](LICENSE).
