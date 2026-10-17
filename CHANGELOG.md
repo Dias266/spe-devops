@@ -7,6 +7,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-17
+
 ### Added
 - `Makefile` as one entry point: `make check` runs version check, lint and tests on all platforms; `make up` starts the stack.
 - Checkstyle for the Java multi-agent system, run by `./gradlew check`.
@@ -49,5 +51,6 @@ project for Software Process Engineering.
 ### Removed
 - Committed `node_modules`, `.DS_Store` and IDE cache files.
 
-[Unreleased]: https://github.com/Dias266/spe-devops/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Dias266/spe-devops/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Dias266/spe-devops/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Dias266/spe-devops/releases/tag/v0.1.0
