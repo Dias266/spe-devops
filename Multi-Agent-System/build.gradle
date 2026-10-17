@@ -1,39 +1,67 @@
 plugins {
     id 'java'
+    id 'jacoco'
+    id 'checkstyle'
 }
 
 group   = 'ise.mas'
-version = '1.0.0'
+version = '0.1.0'
 
-def jasonJar = file("${System.getProperty('user.home')}/.gradle/caches/modules-2/files-2.1/io.github.jason-lang/jason-interpreter/3.3.0/3c0fae64839e6566abeb9ed42ab63255e570f972/jason-interpreter-3.3.0.jar")
-def jsonImpl  = file("${System.getProperty('user.home')}/.gradle/caches/modules-2/files-2.1/org.glassfish/javax.json/1.1.4/943f240a509d3c70b448a55c6735591ecbd37c88/javax.json-1.1.4.jar")
-def jsonApi   = file("${System.getProperty('user.home')}/.gradle/caches/modules-2/files-2.1/javax.json/javax.json-api/1.1.4/c8efa3cfaeee2b05c2dfd54cba21548a081b1746/javax.json-api-1.1.4.jar")
-
-println "Using Jason jar: ${jasonJar}"
+repositories {
+    mavenCentral()
+}
 
 dependencies {
-    implementation files(jasonJar, jsonImpl, jsonApi)
+    implementation 'io.github.jason-lang:jason-interpreter:3.3.0'
+    implementation 'org.glassfish:javax.json:1.1.4'
+    implementation 'javax.json:javax.json-api:1.1.4'
+    implementation group: 'org.json', name: 'json', version: '20230227'
+
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 sourceSets {
     main {
         java {
             srcDirs = ['.']
+            exclude 'src/**'
+            exclude 'build/**'
+            exclude '.gradle/**'
         }
     }
 }
 
 compileJava {
-    sourceCompatibility = '11'
-    targetCompatibility = '11'
+    sourceCompatibility = '21'
+    targetCompatibility = '21'
     options.encoding = 'UTF-8'
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+jacocoTestReport {
+    dependsOn test
+    // The main source set is the project folder itself (srcDirs = ['.']), which also
+    // contains build/. Point the report at the real Java folders only, and run it after
+    // Checkstyle, so Gradle does not see it reading Checkstyle's reports.
+    sourceDirectories.setFrom(files('domain', 'application', 'infrastructure', 'env'))
+    mustRunAfter tasks.named('checkstyleMain'), tasks.named('checkstyleTest')
+    reports {
+        xml.required = true
+        html.required = true
+    }
 }
 
 task run(type: JavaExec, dependsOn: compileJava) {
     group       = 'application'
     description = 'Launch Jason MAS'
-    classpath   = files(jasonJar, jsonImpl, jsonApi, 'build/classes/java/main')
-    mainClass   = 'jason.infra.centralised.RunCentralisedMAS'
+    classpath   = sourceSets.main.runtimeClasspath
+    mainClass   = 'jason.infra.local.RunLocalMAS'
     args        = ['mas/maintenance.mas2j']
     workingDir  = projectDir
     jvmArgs     = [
@@ -47,4 +75,19 @@ task run(type: JavaExec, dependsOn: compileJava) {
 jar {
     archiveFileName = 'fleet-mas-env.jar'
     from sourceSets.main.output
+}
+
+// Linting: `./gradlew check` runs checkstyleMain and checkstyleTest; any violation fails the build.
+checkstyle {
+    toolVersion = '10.17.0'
+    configFile = file('config/checkstyle/checkstyle.xml')
+    maxWarnings = 0
+    ignoreFailures = false
+}
+
+// Copies the runtime dependencies next to the jar, so the Docker image can run
+// `java -cp 'lib/*' jason.infra.local.RunLocalMAS` without Gradle.
+tasks.register('copyRuntimeLibs', Copy) {
+    from configurations.runtimeClasspath
+    into layout.buildDirectory.dir('deps')
 }
