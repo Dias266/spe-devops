@@ -14,7 +14,9 @@ import application.port.ServiceRecordRepository;
 import application.usecase.EndorseServiceRecord;
 import application.usecase.LogFleetAnomaly;
 import application.usecase.RegisterVehicle;
+import application.port.TelemetryPublisherPort;
 import infrastructure.InMemoryServiceRecordRepository;
+import infrastructure.IoTControlUnitClient;
 import infrastructure.MockMLPipeline;
 import infrastructure.RealBlockchainClient;
 
@@ -90,6 +92,7 @@ public class FleetMASEnvironment extends Environment {
 
     private BlockchainPort blockchainPort;
     private MLPredictionPort mlPredictionPort;
+    private TelemetryPublisherPort telemetryPublisher;
 
     private LogFleetAnomaly logFleetAnomalyUseCase;
     private RegisterVehicle registerVehicleUseCase;
@@ -123,6 +126,7 @@ public class FleetMASEnvironment extends Environment {
             blockchainPort = new RealBlockchainClient(DS_BACKEND_URL);
         }
         mlPredictionPort = new MockMLPipeline();
+        telemetryPublisher = new IoTControlUnitClient(DS_BACKEND_URL);
 
         ServiceRecordRepository serviceRecordRepository = new InMemoryServiceRecordRepository();
 
@@ -235,8 +239,8 @@ public class FleetMASEnvironment extends Environment {
                 return handleReadDigitalTwin(agentName, action.getTerm(0).toString());
 
             case "sendMQTTMessage": {
-                // Unchanged — no domain model exists yet for raw MQTT
-                // publishing, so this stays a direct pass-through.
+                // Goes through TelemetryPublisherPort to the IoT control
+                // unit, which publishes it on MQTT vehicle/telemetry.
                 String topic = action.getTerm(0).toString();
                 String payload = action.getTerm(1).toString();
                 return handleMQTT4(topic, payload);
@@ -281,37 +285,9 @@ public class FleetMASEnvironment extends Environment {
     // -------------------------------------------------------------------------
 
     private boolean handleMQTT4(String topic, String payload) {
-        try {
-            String cleanPayload = payload;
-            if (cleanPayload.startsWith("\"") && cleanPayload.endsWith("\"")) {
-                cleanPayload = cleanPayload.substring(1, cleanPayload.length() - 1);
-            }
-            cleanPayload = cleanPayload.replace("\\\"", "\"");
-
-            logger.info("[ENV] Sending payload to API: " + cleanPayload);
-
-            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                    .uri(java.net.URI.create(DS_BACKEND_URL + "/api/publish-telemetry"))
-                    .header("Content-Type", "application/json")
-                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(cleanPayload))
-                    .build();
-
-            java.net.http.HttpResponse<String> response =
-                    client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() == 200) {
-                logger.info("[ENV] API call successful: " + response.body());
-                return true;
-            } else {
-                logger.warning("[ENV] API call failed, status: " + response.statusCode());
-                return false;
-            }
-
-        } catch (Exception e) {
-            logger.log(java.util.logging.Level.SEVERE, "[ENV] HTTP request failed", e);
-            return false;
-        }
+        // The HTTP call lives in infrastructure.IoTControlUnitClient; this
+        // class only turns the Jason string term back into plain JSON.
+        return telemetryPublisher.publish(topic, IoTControlUnitClient.unquoteJasonString(payload));
     }
 
     private boolean handlePollIoT(String agentName) {

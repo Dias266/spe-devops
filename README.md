@@ -91,6 +91,10 @@ Or run the published images without building: `docker compose pull && docker com
 
 CI/CD runs on CircleCI: see [`.circleci/config.yml`](.circleci/config.yml).
 
+The MQTT path is tested at three levels: `Embedded-Systems-gs-main/test/mqtt.test.js` (control unit
+against an in-process broker), `IoTControlUnitClientTest` (the Java MAS side of the same HTTP
+contract), and an MQTT round trip through the real Mosquitto container in the delivery job.
+
 ---
 
 ## 🤝 Contributing

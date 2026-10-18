@@ -3,7 +3,8 @@ version: 2.1
 # CI/CD pipeline for the Vehicle Fleet Predictive Maintenance system.
 #
 #   every push / PR : check-version + lint, test and coverage on 3 platforms (JVM, Python, Node.js)
-#   main + vX.Y.Z   : build all images, smoke-test the whole stack with docker compose,
+#   main + vX.Y.Z   : build all images, smoke-test the whole stack with docker compose
+#                     (incl. an MQTT round trip through Mosquitto),
 #                     then push multi-arch images (linux/amd64, linux/arm64) to ghcr.io
 #
 # Needs two project environment variables (CircleCI -> Project Settings -> Environment Variables):
@@ -158,6 +159,32 @@ jobs:
             sleep 10
             test -n "$(docker compose ps -q --status running mas)" || { echo "mas container is not running"; exit 1; }
             echo "Smoke test passed"
+      - run:
+          name: MQTT round trip through Mosquitto (MAS -> IoT control unit -> broker -> control unit)
+          command: |
+            # Listen on the real broker for the next telemetry message.
+            docker compose exec -T mosquitto mosquitto_sub -h localhost -t vehicle/telemetry -C 1 -W 30 > /tmp/mqtt.txt &
+            SUB=$!
+            sleep 2
+            # Same request the Java MAS sends (FleetMASEnvironment -> IoTControlUnitClient).
+            curl -fsS --retry 15 --retry-delay 2 --retry-connrefused \
+              -H 'Content-Type: application/json' \
+              -d '{"vin": "SMOKE-VIN-1", "temp": "22", "mileage": "2000", "state": "NORMAL"}' \
+              http://localhost:3002/api/publish-telemetry
+            echo
+            wait "$SUB"
+            echo "Seen on Mosquitto: $(cat /tmp/mqtt.txt)"
+            grep -q '^VIN:SMOKE-VIN-1|TEMP:22|' /tmp/mqtt.txt
+            # The control unit is subscribed too, so the message must come back into its API.
+            for i in $(seq 1 15); do
+              if curl -fsS http://localhost:3002/api/telemetry/latest | grep -q '"vin":"SMOKE-VIN-1"'; then
+                echo "MQTT round trip passed"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "control unit never received its own telemetry back from Mosquitto"
+            exit 1
       - run:
           name: Container logs (on failure)
           when: on_fail

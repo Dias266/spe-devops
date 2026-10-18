@@ -7,6 +7,14 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- MQTT integration test for the IoT control unit (`test/mqtt.test.js`, in-process aedes broker): HTTP publish reaches `vehicle/telemetry`, incoming telemetry is stored, and `WARNING`/`CRITICAL` health states are published on `vehicle/state`.
+- `TelemetryPublisherPort` and `IoTControlUnitClient` for the MAS-to-IoT connection, with a JUnit contract test against a fake control unit.
+- CircleCI delivery job: MQTT round trip through the real Mosquitto container after the smoke test.
+
+### Changed
+- `FleetMASEnvironment` sends `sendMQTTMessage` through `TelemetryPublisherPort` instead of building the HTTP request itself; the request now times out after 5 s.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added
