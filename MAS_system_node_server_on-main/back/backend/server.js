@@ -3,6 +3,12 @@ const axios = require('axios');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { Pool } = require('pg');
+
+// e.g. postgres://fleet:fleet@postgres:5432/fleet in Docker; unset = the database endpoints answer 503.
+const pool = process.env.DATABASE_URL
+    ? new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 3000 })
+    : null;
 
 const app = express();
 app.use(cors());
@@ -94,6 +100,39 @@ app.get('/api/ml-prediction', (req, res) => {
         res.json(predictionData);
     } catch (e) {
         res.status(500).send(e.message);
+    }
+});
+app.get('/api/service-records', async (req, res) => {
+    if (!pool) {
+        return res.status(503).json({ error: 'DATABASE_URL is not set' });
+    }
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, vehicle_id, part, technician, cost, endorser_id, approved, decided_at
+               FROM service_record
+              ORDER BY id DESC
+              LIMIT 500`
+        );
+        res.json(rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+app.get('/api/ml-predictions', async (req, res) => {
+    if (!pool) {
+        return res.status(503).json({ error: 'DATABASE_URL is not set' });
+    }
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, instance_number, instance_data, raw_prediction,
+                    confidence::float AS confidence, decision, predicted_at
+               FROM maintenance_prediction
+              ORDER BY id DESC
+              LIMIT 500`
+        );
+        res.json(rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 app.listen(3000, () => console.log('Proxy active on port 3000'));

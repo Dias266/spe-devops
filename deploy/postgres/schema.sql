@@ -26,3 +26,14 @@ DROP TRIGGER IF EXISTS service_record_decided_once ON service_record;
 CREATE TRIGGER service_record_decided_once
     BEFORE UPDATE ON service_record
     FOR EACH ROW EXECUTE FUNCTION forbid_redecide();
+
+-- Maintenance Prediction context: one row per Weka prediction made by ML-model/main.py.
+CREATE TABLE IF NOT EXISTS maintenance_prediction (
+    id              SERIAL       PRIMARY KEY,
+    instance_number INTEGER      NOT NULL,
+    instance_data   TEXT         NOT NULL,
+    raw_prediction  TEXT         NOT NULL,
+    confidence      NUMERIC(5,1) NOT NULL CHECK (confidence BETWEEN 0 AND 100),
+    decision        TEXT         NOT NULL,
+    predicted_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
+);

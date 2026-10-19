@@ -17,6 +17,36 @@ LOG_FILE_dashboard = os.environ.get(
 )
 
 
+# PostgreSQL address, e.g. postgresql://fleet:fleet@postgres:5432/fleet in Docker.
+# When it is not set, predictions are only written to the log files.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+
+def save_to_database(instance_num, instance_data, raw_prediction, confidence, decision):
+    """Stores one prediction in the maintenance_prediction table.
+
+    Returns True when a row was written, False when no database is configured.
+    """
+    if not DATABASE_URL:
+        return False
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL, connect_timeout=5) as conn:
+        conn.execute(
+            "INSERT INTO maintenance_prediction "
+            "(instance_number, instance_data, raw_prediction, confidence, decision) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (
+                int(instance_num),
+                instance_data,
+                raw_prediction,
+                round(confidence, 1),
+                decision,
+            ),
+        )
+    return True
+
+
 def locate_project_file(filename):
     if os.path.exists(filename):
         return filename
@@ -199,6 +229,15 @@ def main():
             pass
 
         print(f"🎉 Results successfully appended to file: {LOG_FILE}\n")
+
+        if save_to_database(
+            instance_num,
+            test_row,
+            weka_prediction,
+            confidence_percentage,
+            explanation,
+        ):
+            print("🗄  Prediction stored in PostgreSQL (maintenance_prediction)\n")
 
     except Exception as e:
         print(f"\n❌ Execution Error using JPype: {e}")

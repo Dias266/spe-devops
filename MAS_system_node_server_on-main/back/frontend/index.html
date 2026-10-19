@@ -75,7 +75,18 @@ h1{
 
 .card.service{ border-color:var(--accent); }
 .card.ml-box { border-color:var(--warning); }
-
+.card.records{ grid-column:1/-1; border-color:var(--success); }
+.card.predictions{ grid-column:1/-1; }
+.decision-needs{ color:var(--danger); }
+.decision-ok{ color:var(--success); }
+.records-scroll{ max-height:340px; overflow-y:auto; margin-top:12px; border:1px solid var(--border); border-radius:8px; }
+.records-table{ width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:.8rem; }
+.records-table th{ position:sticky; top:0; background:var(--card-bg); text-align:left; color:var(--muted); font-weight:400; padding:6px 8px; border-bottom:1px solid var(--border); }
+.records-count{ font-family:'JetBrains Mono',monospace; font-size:.8rem; color:var(--muted); font-weight:400; }
+.records-table td{ padding:6px 8px; border-bottom:1px solid var(--border); }
+.status-committed{ color:var(--success); }
+.status-hold{ color:var(--danger); }
+.status-pending{ color:var(--warning); }
 .card.warn{
     border-color:var(--warning);
     box-shadow:0 0 16px -6px var(--warning);
@@ -181,7 +192,8 @@ h3{
 <script>
 
 const API_URL = "http://localhost:3000/api/fleet";
-const ML_API_URL = "http://localhost:3000/api/ml-prediction";
+const PREDICTIONS_API_URL = "http://localhost:3000/api/ml-predictions";
+const RECORDS_API_URL = "http://localhost:3000/api/service-records";
 const POLL_MS = 4000;
 
 const cardEls = new Map();
@@ -294,43 +306,103 @@ function updateServiceCard(card, a){
     card.classList.toggle("critical", overloaded);
 }
 
-function buildMlCard(){
+function buildPredictionsCard(){
     const card = document.createElement("div");
-    card.className = "card ml-box in";
+    card.className = "card ml-box predictions in";
     card.innerHTML = `
-        <h3>🤖 ML Prediction Model</h3>
-        <div class="stat"><span>Instance</span><span class="value ml-instance">0</span></div>
-        <div class="stat"><span>Confidence</span><span class="value ml-conf">0%</span></div>
-        <div class="stat"><span>Decision</span><span class="value ml-decision" style="font-size:0.8rem;margin-left:15px">Pending</span></div>
-        <div style="margin-top: 10px;">
-            <span style="color:var(--muted); font-size:0.8rem;">Instance Data:</span>
-            <div class="ml-data-text value ml-raw-data">Loading...</div>
+        <h3>🤖 ML Predictions (PostgreSQL) <span class="records-count"></span></h3>
+        <div class="records-scroll">
+            <table class="records-table">
+                <thead><tr>
+                    <th>#</th><th>Instance</th><th>Weka</th><th>Confidence</th>
+                    <th>Decision</th><th>Predicted at</th>
+                </tr></thead>
+                <tbody></tbody>
+            </table>
         </div>
     `;
     return card;
 }
 
-function updateMlCard(card, data){
-    card.querySelector(".ml-instance").textContent = data.instanceNumber;
-    card.querySelector(".ml-conf").textContent = data.confidence;
-    
-    const decisionEl = card.querySelector(".ml-decision");
-    decisionEl.textContent = data.decision;
-    
-    if(data.decision.includes("No Maintenance")) {
-        decisionEl.style.color = "var(--success)";
-    } else {
-        decisionEl.style.color = "var(--danger)";
+function updatePredictionsCard(card, rows){
+    card.querySelector(".records-count").textContent =
+        rows.length === 1 ? "1 prediction" : `${rows.length} predictions`;
+    const box = card.querySelector(".records-scroll");
+    const keepScroll = box.scrollTop;
+    const body = card.querySelector("tbody");
+    body.replaceChildren();
+    if(rows.length === 0){
+        const td = body.insertRow().insertCell();
+        td.colSpan = 6;
+        td.textContent = "No predictions yet";
+        return;
     }
+    rows.forEach(r => {
+        const tr = body.insertRow();
+        [r.id, r.instance_number, r.raw_prediction, `${Number(r.confidence).toFixed(1)}%`].forEach(v => {
+            tr.insertCell().textContent = v;      // textContent: never inject HTML from the database
+        });
+        const dec = tr.insertCell();
+        dec.textContent = r.decision;
+        dec.className = r.decision.startsWith("Maintenance 1") ? "decision-needs" : "decision-ok";
+        tr.insertCell().textContent = new Date(r.predicted_at).toLocaleTimeString();
+    });
+    box.scrollTop = keepScroll;
+}
 
-    card.querySelector(".ml-raw-data").textContent = data.instanceData;
+function buildRecordsCard(){
+    const card = document.createElement("div");
+    card.className = "card records in";
+    card.innerHTML = `
+        <h3>🗄 Service Records (PostgreSQL) <span class="records-count"></span></h3>
+        <div class="records-scroll">
+            <table class="records-table">
+                <thead><tr>
+                    <th>#</th><th>Vehicle</th><th>Part</th><th>Technician</th>
+                    <th>Cost</th><th>Endorsed by</th><th>Status</th>
+                </tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    `;
+    return card;
+}
+
+function updateRecordsCard(card, rows){
+    card.querySelector(".records-count").textContent =
+        rows.length === 1 ? "1 record" : `${rows.length} records`;
+    const box = card.querySelector(".records-scroll");
+    const keepScroll = box.scrollTop;          // don't jump back to the top on every refresh
+    const body = card.querySelector("tbody");
+    body.replaceChildren();
+    if(rows.length === 0){
+        const tr = body.insertRow();
+        const td = tr.insertCell();
+        td.colSpan = 7;
+        td.textContent = "No service records yet";
+        return;
+    }
+    rows.forEach(r => {
+        const tr = body.insertRow();
+        const status = r.decided_at === null ? ["Pending", "status-pending"]
+                     : r.approved ? ["Committed", "status-committed"]
+                     : ["Integrity hold", "status-hold"];
+        [r.id, r.vehicle_id, r.part, r.technician, r.cost, r.endorser_id || "—"].forEach(v => {
+            tr.insertCell().textContent = v;     // textContent: never inject HTML from the database
+        });
+        const st = tr.insertCell();
+        st.textContent = status[0];
+        st.className = status[1];
+    });
+    box.scrollTop = keepScroll;
 }
 
 async function refreshFleet(){
     try{
-        const [fleetRes, mlRes] = await Promise.all([
+        const [fleetRes, mlRes, recordsRes] = await Promise.all([
             fetch(API_URL),
-            fetch(ML_API_URL).catch(() => null)
+            fetch(PREDICTIONS_API_URL).catch(() => null),
+            fetch(RECORDS_API_URL).catch(() => null)
         ]);
 
         const agents = await fleetRes.json();
@@ -361,19 +433,34 @@ async function refreshFleet(){
             update(card, a);
         });
 
-        // Render ML Box card dynamically
+        // Render the ML predictions card (from PostgreSQL)
         if (mlRes && mlRes.ok) {
-            const mlData = await mlRes.json();
-            const mlKey = "ml_prediction_box";
+            const predictions = await mlRes.json();
+            const mlKey = "ml_predictions_box";
             seenKeys.add(mlKey);
-            
+
             let mlCard = cardEls.get(mlKey);
             if(!mlCard){
-                mlCard = buildMlCard();
+                mlCard = buildPredictionsCard();
                 cardEls.set(mlKey, mlCard);
                 container.appendChild(mlCard);
             }
-            updateMlCard(mlCard, mlData);
+            updatePredictionsCard(mlCard, predictions);
+        }
+
+        // Render the service records card (from PostgreSQL)
+        if (recordsRes && recordsRes.ok) {
+            const rows = await recordsRes.json();
+            const recKey = "service_records_box";
+            seenKeys.add(recKey);
+
+            let recCard = cardEls.get(recKey);
+            if(!recCard){
+                recCard = buildRecordsCard();
+                cardEls.set(recKey, recCard);
+                container.appendChild(recCard);
+            }
+            updateRecordsCard(recCard, rows);
         }
 
         for(const [key, card] of cardEls){

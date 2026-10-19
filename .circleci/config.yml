@@ -4,7 +4,7 @@ version: 2.1
 #
 #   every push / PR : check-version + lint, test and coverage on 3 platforms (JVM, Python, Node.js)
 #   main + vX.Y.Z   : build all images, smoke-test the whole stack with docker compose
-#                     (incl. an MQTT round trip through Mosquitto),
+#                     (incl. PostgreSQL and an MQTT round trip through Mosquitto),
 #                     then push multi-arch images (linux/amd64, linux/arm64) to ghcr.io
 #
 # Needs two project environment variables (CircleCI -> Project Settings -> Environment Variables):
@@ -167,14 +167,19 @@ jobs:
             test "$ML_EXIT" = 0 || { echo "ml-service exited with code $ML_EXIT"; exit 1; }
             curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://localhost:3002/api/telemetry/latest
             echo
-            curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://localhost:3000/api/ml-prediction | tee /tmp/prediction.json
+            # The ML service stored its predictions in PostgreSQL and the dashboard backend reads them
+            curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://localhost:3000/api/ml-predictions | tee /tmp/predictions.json
             echo
-            grep -q '"decision"' /tmp/prediction.json
+            grep -q '"decision"' /tmp/predictions.json
             curl -fsS --retry 15 --retry-delay 2 --retry-connrefused -o /dev/null http://localhost:8080/
             sleep 10
             test -n "$(docker compose ps -q --status running mas)" || { echo "mas container is not running"; exit 1; }
             # PostgreSQL is up and the service_record table exists
             docker compose exec -T postgres psql -U fleet -d fleet -c "SELECT count(*) FROM service_record"
+            docker compose exec -T postgres psql -U fleet -d fleet -c "SELECT count(*) FROM maintenance_prediction"
+            # The dashboard backend can read the records from PostgreSQL
+            curl -fsS --retry 10 --retry-delay 2 --retry-connrefused http://localhost:3000/api/service-records
+            echo
             echo "Smoke test passed"
       - run:
           name: MQTT round trip through Mosquitto (MAS -> IoT control unit -> broker -> control unit)

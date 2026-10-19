@@ -57,10 +57,14 @@ services:
     image: ${IMAGE_PREFIX:-ghcr.io/dias266/spe}-ml-service:${TAG:-latest}
     build: ./ML-model
     environment:
-      INSTANCE: "8"
+      INSTANCES: "1 2 3 4 5 6 7 8 9"
       DASHBOARD_LOG: /shared/final_predictions_log.txt
+      DATABASE_URL: postgresql://fleet:fleet@postgres:5432/fleet
     volumes:
       - predictions:/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: "no"
 
   dashboard-backend:
@@ -69,10 +73,14 @@ services:
     environment:
       AGENT_BASE_URL: http://mas:3272
       PREDICTIONS_LOG: /shared/final_predictions_log.txt
+      DATABASE_URL: postgres://fleet:fleet@postgres:5432/fleet
     volumes:
       - predictions:/shared
     ports:
       - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   dashboard-frontend:
     image: ${IMAGE_PREFIX:-ghcr.io/dias266/spe}-dashboard-frontend:${TAG:-latest}

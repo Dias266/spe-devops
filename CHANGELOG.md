@@ -14,8 +14,11 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `LogServiceRecord` use case: the service centre's `writeServiceRecord` action now stores a real `ServiceRecord` in the repository and passes it to `BlockchainPort`.
 - `endorseServiceRecord` environment action: the service centre's endorsement reply now goes through `EndorseServiceRecord`, so a record can be decided only once at runtime too.
 - PostgreSQL persistence for service records (`PostgresServiceRecordRepository`, `deploy/postgres/schema.sql`); the database also refuses to change a decided record. Integration tests run against a PostgreSQL container in CircleCI.
+- Dashboard card "Service Records (PostgreSQL)": scrollable table of all stored service records (`GET /api/service-records`).
+- ML predictions stored in PostgreSQL (`maintenance_prediction` table): the ML service predicts all 9 template instances and saves each result; the dashboard shows them in a scrollable "ML Predictions (PostgreSQL)" card (`GET /api/ml-predictions`).
 ### Changed
 - `writeServiceRecord` takes `(RecordId, Vehicle, Part, Tech, Cost)` instead of `(Vehicle, Details)`; `service_center_agent.asl` updated.
+- The dashboard's ML card reads the predictions from PostgreSQL instead of the last block of `final_predictions_log.txt` (the log file is still written as a backup).
 - `FleetMASEnvironment` sends `sendMQTTMessage` through `TelemetryPublisherPort` instead of building the HTTP request itself; the request now times out after 5 s.
 
 ## [0.2.0] - 2026-10-17

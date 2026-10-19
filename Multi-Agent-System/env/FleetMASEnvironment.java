@@ -398,9 +398,12 @@ public class FleetMASEnvironment extends Environment {
         tickThread = new Thread(() -> {
             while (running) {
                 try {
-                    Thread.sleep(2000);
-                    addPercept("fleet_coordinator_agent",
-                            ASSyntax.createLiteral("tick"));
+                    // tick is present for 1 s, then absent for 1 s, so each tick
+                    // is a new +tick event for the coordinator (every 2 s as before)
+                    addPercept("fleet_coordinator_agent", ASSyntax.createLiteral("tick"));
+                    Thread.sleep(1000);
+                    removePercept("fleet_coordinator_agent", ASSyntax.createLiteral("tick"));
+                    Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
