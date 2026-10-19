@@ -13,8 +13,11 @@ import application.port.MaintenanceInsight;
 import application.port.ServiceRecordRepository;
 import application.usecase.EndorseServiceRecord;
 import application.usecase.LogFleetAnomaly;
+import application.usecase.LogServiceRecord;
 import application.usecase.RegisterVehicle;
 import application.port.TelemetryPublisherPort;
+import domain.event.ServiceRecordEndorsed;
+import domain.model.ServiceRecord;
 import infrastructure.InMemoryServiceRecordRepository;
 import infrastructure.IoTControlUnitClient;
 import infrastructure.MockMLPipeline;
@@ -64,9 +67,10 @@ import infrastructure.RealBlockchainClient;
  *    — are REMOVED. They had zero call sites in the original file (only
  *    handleMQTT4 was ever invoked from executeAction), so this is dead
  *    code removal, not a behaviour change.
- *  - writeServiceRecord is NOT yet routed through BlockchainPort — see
- *    the comment on that case below for why, and what would need to
- *    change on the .asl side first.
+ *  - writeServiceRecord now carries (RID, Vehicle, Part, Tech, Cost) and goes
+ *    through the LogServiceRecord use case (repository + BlockchainPort);
+ *    the endorsement reply goes through EndorseServiceRecord via the new
+ *    endorseServiceRecord action.
  *  - The pre-existing bug where both branches of USE_REAL_INTEGRATIONS
  *    constructed RealBlockchainClient (making the mock/real toggle a
  *    no-op for blockchain) is PRESERVED as-is in this pass, flagged
@@ -97,6 +101,7 @@ public class FleetMASEnvironment extends Environment {
     private LogFleetAnomaly logFleetAnomalyUseCase;
     private RegisterVehicle registerVehicleUseCase;
     private EndorseServiceRecord endorseServiceRecordUseCase;
+    private LogServiceRecord logServiceRecordUseCase;
 
     private Thread tickThread;
     private volatile boolean running = true;
@@ -133,6 +138,7 @@ public class FleetMASEnvironment extends Environment {
         logFleetAnomalyUseCase = new LogFleetAnomaly(blockchainPort);
         registerVehicleUseCase = new RegisterVehicle();
         endorseServiceRecordUseCase = new EndorseServiceRecord(serviceRecordRepository);
+        logServiceRecordUseCase = new LogServiceRecord(serviceRecordRepository, blockchainPort);
 
         startTickThread();
         logger.info("[ENV] FleetMASEnvironment ready.");
@@ -246,33 +252,15 @@ public class FleetMASEnvironment extends Environment {
                 return handleMQTT4(topic, payload);
             }
 
-            case "writeServiceRecord": {
-                // NOT YET routed through BlockchainPort. BlockchainPort's
-                // writeServiceRecord takes a full domain.model.ServiceRecord
-                // (id, vehicleId, part, technician, cost) — but this Jason
-                // action only ever carries (VehicleID, details-atom); see
-                // service_center_agent.asl's
-                //   writeServiceRecord(VehicleID, scheduled_maintenance);
-                // None of the other fields a ServiceRecord needs are passed
-                // across this call. Building one here would mean fabricating
-                // data (a fake id, fake part/technician/cost) just to satisfy
-                // the port's signature, which would be worse than leaving
-                // this one case unconverted. Wiring it properly needs the
-                // .asl call site changed to pass RID/Part/Tech/Cost too —
-                // out of scope for this file-only edit. Behaviour is
-                // preserved as-is (the previous adapter's writeServiceRecord
-                // was itself a stub that always returned true and ignored
-                // its inputs, so nothing observable is lost by not routing
-                // this through the new port yet).
-                String vehicleId = action.getTerm(0).toString();
-                boolean ok = true;
-                if (ok) {
-                    addPercept("fleet_coordinator_agent",
-                            ASSyntax.createLiteral("booking_confirmed",
-                                    ASSyntax.createAtom(vehicleId)));
-                }
-                return ok;
-            }
+            case "writeServiceRecord":
+                // writeServiceRecord(RID, Vehicle, Part, Tech, Cost) from
+                // service_center_agent.asl, when a booking is accepted.
+                return handleWriteServiceRecord(action);
+
+            case "endorseServiceRecord":
+                // endorseServiceRecord(RID, Endorser, approve|reject) from
+                // service_center_agent.asl, when the endorsement reply arrives.
+                return handleEndorseServiceRecord(action);
 
             default:
                 logger.warning("[ENV] Unknown action: " + functor);
@@ -288,6 +276,65 @@ public class FleetMASEnvironment extends Environment {
         // The HTTP call lives in infrastructure.IoTControlUnitClient; this
         // class only turns the Jason string term back into plain JSON.
         return telemetryPublisher.publish(topic, IoTControlUnitClient.unquoteJasonString(payload));
+    }
+
+    private boolean handleWriteServiceRecord(Structure action) {
+        if (action.getArity() != 5) {
+            logger.warning("[ENV] writeServiceRecord expects (RID, Vehicle, Part, Tech, Cost), got " + action);
+            return false;
+        }
+        String vehicleId = action.getTerm(1).toString();
+        try {
+            ServiceRecord record = logServiceRecordUseCase.execute(
+                    intTerm(action.getTerm(0)),
+                    vehicleId,
+                    action.getTerm(2).toString(),
+                    action.getTerm(3).toString(),
+                    intTerm(action.getTerm(4)));
+            logger.info("[ENV] Service record stored: " + record);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.warning("[ENV] writeServiceRecord rejected: " + e.getMessage());
+            return false;
+        }
+        // Unchanged from before: the coordinator is also told the booking was
+        // confirmed (the service centre sends the same message itself).
+        addPercept("fleet_coordinator_agent",
+                ASSyntax.createLiteral("booking_confirmed", ASSyntax.createAtom(vehicleId)));
+        return true;
+    }
+
+    private boolean handleEndorseServiceRecord(Structure action) {
+        if (action.getArity() != 3) {
+            logger.warning("[ENV] endorseServiceRecord expects (RID, Endorser, approve|reject), got " + action);
+            return false;
+        }
+        String decision = action.getTerm(2).toString();
+        if (!"approve".equals(decision) && !"reject".equals(decision)) {
+            logger.warning("[ENV] endorseServiceRecord: decision must be approve or reject, got " + decision);
+            return false;
+        }
+        try {
+            ServiceRecordEndorsed event = endorseServiceRecordUseCase.execute(
+                    intTerm(action.getTerm(0)), action.getTerm(1).toString(), "approve".equals(decision));
+            logger.info("[ENV] " + event);
+            return true;
+        } catch (IllegalArgumentException | IllegalStateException | NoSuchElementException e) {
+            // unknown record, blank endorser, or a record that was already decided
+            logger.warning("[ENV] endorseServiceRecord rejected: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** Reads a Jason number term (e.g. a record id or a cost) as an int. */
+    private static int intTerm(Term term) {
+        if (!term.isNumeric()) {
+            throw new IllegalArgumentException("expected a number, got " + term);
+        }
+        try {
+            return (int) ((NumberTerm) term).solve();
+        } catch (Exception e) {
+            throw new IllegalArgumentException("expected a number, got " + term, e);
+        }
     }
 
     private boolean handlePollIoT(String agentName) {

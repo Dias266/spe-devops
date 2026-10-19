@@ -11,8 +11,11 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - MQTT integration test for the IoT control unit (`test/mqtt.test.js`, in-process aedes broker): HTTP publish reaches `vehicle/telemetry`, incoming telemetry is stored, and `WARNING`/`CRITICAL` health states are published on `vehicle/state`.
 - `TelemetryPublisherPort` and `IoTControlUnitClient` for the MAS-to-IoT connection, with a JUnit contract test against a fake control unit.
 - CircleCI delivery job: MQTT round trip through the real Mosquitto container after the smoke test.
+- `LogServiceRecord` use case: the service centre's `writeServiceRecord` action now stores a real `ServiceRecord` in the repository and passes it to `BlockchainPort`.
+- `endorseServiceRecord` environment action: the service centre's endorsement reply now goes through `EndorseServiceRecord`, so a record can be decided only once at runtime too.
 
 ### Changed
+- `writeServiceRecord` takes `(RecordId, Vehicle, Part, Tech, Cost)` instead of `(Vehicle, Details)`; `service_center_agent.asl` updated.
 - `FleetMASEnvironment` sends `sendMQTTMessage` through `TelemetryPublisherPort` instead of building the HTTP request itself; the request now times out after 5 s.
 
 ## [0.2.0] - 2026-10-17

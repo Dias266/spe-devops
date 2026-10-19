@@ -49,9 +49,9 @@ Vehicle vN: reported_issues++ , service_part:=brake_pad , urgency:=high
 Vehicle vN ──book_request(vN, brake_pad, high)──▶ Coordinator
 Coordinator: escalate_pressure ; ──booking_request(vN, brake_pad, high)──▶ Service
 Service: accept (slot free, part in stock, capacity>0, qualified tech)
-Service: reserve slot+capacity+part ; create service_record(RID,...) ; writeServiceRecord
+Service: reserve slot+capacity+part ; create service_record(RID,...) ; writeServiceRecord(RID, vN, Part, Tech, Cost)
 Service ──endorse_request(RID, vN)──▶ Coordinator
-Coordinator ──endorsement(RID, approve)──▶ Service        (commit)
+Coordinator ──endorsement(RID, approve)──▶ Service        (commit: endorseServiceRecord)
 Service ──booking_confirmed(slotK, service_center_agent)──▶ Vehicle vN
 Service ──booking_confirmed(vN)──▶ Coordinator            (decay pressure)
 Service ──service_completed(vN, RID)──▶ Coordinator
@@ -109,7 +109,8 @@ generalises to a multi-service-centre network (Byzantine validation).
 | `registerVehicle(Me, VIN)` | Vehicle | true; injects `vehicle_registered(Me)` to Coordinator |
 | `pollIoTAnomalyStream` | Coordinator | true; injects `anomaly_detected/3` |
 | `logFleetAnomalyToBlockchain(Type, Count)` | Coordinator | true (mock) / HTTP 200/201 (real) |
-| `writeServiceRecord(Vehicle, Details)` | Service | true; injects `booking_confirmed(Vehicle)` to Coordinator |
+| `writeServiceRecord(RecordId, Vehicle, Part, Tech, Cost)` | Service | builds and stores a `ServiceRecord` (use case `LogServiceRecord`) and hands it to the ledger port; injects `booking_confirmed(Vehicle)` to Coordinator. Fails on invalid fields or a duplicate `RecordId` |
+| `endorseServiceRecord(RecordId, Endorser, approve\|reject)` | Service | stores the decision on the record (use case `EndorseServiceRecord`). Fails if the record is unknown or was already decided |
 | `fetchEdgeSensors`, `evaluateRandomForest`, `evaluateIsolationForest`, `deriveECDSAKey`, `signTelemetryRecord` | Vehicle | true (acknowledgement; values simulated in-agent) |
 
 See `agent_design.md` §5 for why the ML/crypto actions are acknowledgements rather than

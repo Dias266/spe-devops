@@ -113,7 +113,7 @@ record_valid(RID) :- service_record(RID, _, _, _, _).
        -record_counter(RC); +record_counter(RID);
        +service_record(RID, VehicleID, Part, Tech, Cost);
        // Log to the blockchain (Codice 87474) and request cross-org endorsement
-       writeServiceRecord(VehicleID, scheduled_maintenance);
+       writeServiceRecord(RID, VehicleID, Part, Tech, Cost);
        .send(fleet_coordinator_agent, tell, endorse_request(RID, VehicleID));
        // Confirm to the vehicle and notify the coordinator (decays pressure)
        .send(VehicleID, tell, booking_confirmed(SlotID, service_center_agent));
@@ -181,13 +181,17 @@ record_valid(RID) :- service_record(RID, _, _, _, _).
 // ---------------------------------------------------------------------------
 
 // Endorsement reply for one of OUR records (from the FleetCoordinator's org)
-+endorsement(RID, approve)
-    <- .print("[ServiceCenterAgent] Record #", RID,
-              " ENDORSED (approve) — committed to ledger.").
+// The decision is stored on the record through the environment
+// (EndorseServiceRecord); a record that was already decided is refused there.
++endorsement(RID, approve)[source(Endorser)]
+    <- endorseServiceRecord(RID, Endorser, approve);
+       .print("[ServiceCenterAgent] Record #", RID,
+              " ENDORSED (approve) by ", Endorser, " — committed to ledger.").
 
-+endorsement(RID, reject)
-    <- .print("[ServiceCenterAgent] Record #", RID,
-              " endorsement REJECTED — placing integrity hold.");
++endorsement(RID, reject)[source(Endorser)]
+    <- endorseServiceRecord(RID, Endorser, reject);
+       .print("[ServiceCenterAgent] Record #", RID,
+              " endorsement REJECTED by ", Endorser, " — placing integrity hold.");
        -service_record(RID, _, _, _, _).
 
 // Validate a service record proposed by another peer (Byzantine validation)
