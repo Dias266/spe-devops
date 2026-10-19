@@ -29,6 +29,13 @@ jobs:
   test-and-build-java:
     docker:
       - image: cimg/openjdk:21.0
+        environment:
+          TEST_DATABASE_URL: jdbc:postgresql://localhost:5432/fleet
+      - image: cimg/postgres:16.4
+        environment:
+          POSTGRES_USER: fleet
+          POSTGRES_PASSWORD: fleet
+          POSTGRES_DB: fleet
     working_directory: ~/project/Multi-Agent-System
     steps:
       - checkout:
@@ -36,6 +43,14 @@ jobs:
       - restore_cache:
           keys:
             - gradle-v1-{{ checksum "build.gradle" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+      - run:
+          name: Wait for PostgreSQL
+          command: |
+            for i in $(seq 1 30); do
+              (echo > /dev/tcp/localhost/5432) 2>/dev/null && exit 0
+              sleep 1
+            done
+            echo "PostgreSQL did not start"; exit 1
       - run:
           name: Lint (Checkstyle), test (JUnit) and coverage (JaCoCo)
           command: |
@@ -158,6 +173,8 @@ jobs:
             curl -fsS --retry 15 --retry-delay 2 --retry-connrefused -o /dev/null http://localhost:8080/
             sleep 10
             test -n "$(docker compose ps -q --status running mas)" || { echo "mas container is not running"; exit 1; }
+            # PostgreSQL is up and the service_record table exists
+            docker compose exec -T postgres psql -U fleet -d fleet -c "SELECT count(*) FROM service_record"
             echo "Smoke test passed"
       - run:
           name: MQTT round trip through Mosquitto (MAS -> IoT control unit -> broker -> control unit)

@@ -6,6 +6,7 @@ import java.util.*;
 import java.util.logging.Logger;
 
 import org.json.JSONObject;
+import infrastructure.PostgresServiceRecordRepository;
 
 import application.port.BlockchainPort;
 import application.port.MLPredictionPort;
@@ -133,7 +134,12 @@ public class FleetMASEnvironment extends Environment {
         mlPredictionPort = new MockMLPipeline();
         telemetryPublisher = new IoTControlUnitClient(DS_BACKEND_URL);
 
-        ServiceRecordRepository serviceRecordRepository = new InMemoryServiceRecordRepository();
+        String dbUrl = System.getenv("DATABASE_URL");
+        ServiceRecordRepository serviceRecordRepository = (dbUrl == null || dbUrl.isBlank())
+                ? new InMemoryServiceRecordRepository()
+                : new PostgresServiceRecordRepository(dbUrl,
+                        System.getenv().getOrDefault("DATABASE_USER", "fleet"),
+                        System.getenv().getOrDefault("DATABASE_PASSWORD", "fleet"));
 
         logFleetAnomalyUseCase = new LogFleetAnomaly(blockchainPort);
         registerVehicleUseCase = new RegisterVehicle();

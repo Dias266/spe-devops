@@ -102,6 +102,14 @@ public final class ServiceRecord {
         }
         return value;
     }
+/** Rebuilds a record loaded from storage, with its endorsement if it was decided. */
+    public static ServiceRecord restore(int id, String vehicleId, String part, String technician,
+                                        int cost, Endorsement endorsement) {
+        ServiceRecord record = new ServiceRecord(id, vehicleId, part, technician, cost);
+        record.endorsement = endorsement;   // may be null: not decided yet
+        return record;
+    }
+
 
     @Override
     public boolean equals(Object o) {

@@ -16,6 +16,7 @@ dependencies {
     implementation 'org.glassfish:javax.json:1.1.4'
     implementation 'javax.json:javax.json-api:1.1.4'
     implementation group: 'org.json', name: 'json', version: '20230227'
+    implementation 'org.postgresql:postgresql:42.7.4'
 
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'

@@ -13,7 +13,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - CircleCI delivery job: MQTT round trip through the real Mosquitto container after the smoke test.
 - `LogServiceRecord` use case: the service centre's `writeServiceRecord` action now stores a real `ServiceRecord` in the repository and passes it to `BlockchainPort`.
 - `endorseServiceRecord` environment action: the service centre's endorsement reply now goes through `EndorseServiceRecord`, so a record can be decided only once at runtime too.
-
+- PostgreSQL persistence for service records (`PostgresServiceRecordRepository`, `deploy/postgres/schema.sql`); the database also refuses to change a decided record. Integration tests run against a PostgreSQL container in CircleCI.
 ### Changed
 - `writeServiceRecord` takes `(RecordId, Vehicle, Part, Tech, Cost)` instead of `(Vehicle, Details)`; `service_center_agent.asl` updated.
 - `FleetMASEnvironment` sends `sendMQTTMessage` through `TelemetryPublisherPort` instead of building the HTTP request itself; the request now times out after 5 s.
