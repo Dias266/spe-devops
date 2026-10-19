@@ -163,8 +163,8 @@ jobs:
           name: Smoke test the whole stack with docker compose
           command: |
             docker compose up -d
-            # The ML service predicts once and exits; its exit code must be 0.
-            docker compose wait ml-service
+            ML_EXIT=$(docker wait "$(docker compose ps -a -q ml-service)")
+            test "$ML_EXIT" = 0 || { echo "ml-service exited with code $ML_EXIT"; exit 1; }
             curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://localhost:3002/api/telemetry/latest
             echo
             curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://localhost:3000/api/ml-prediction | tee /tmp/prediction.json
