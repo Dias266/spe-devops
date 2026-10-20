@@ -24,6 +24,25 @@ services:
       - "3002:3002"
     depends_on:
       - mosquitto
+    
+
+  embedded-dashboard-system-service:
+    image: python:3.9-alpine
+    working_dir: /app/Embedded-Systems-gs-main
+    volumes:
+      - .:/app
+    environment:
+      - MQTT_HOST=host.docker.internal
+      - BROKER_URL=mqtt://host.docker.internal:1883
+      - MQTT_URL=mqtt://host.docker.internal:1883
+    command: >
+      sh -c "apk add --no-cache nodejs npm && npm install && python3 -m http.server 8081"
+    ports:
+      - "8081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      
+
 
   postgres:
     image: postgres:16
