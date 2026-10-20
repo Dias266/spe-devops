@@ -81,6 +81,7 @@ Or run the published images without building: `docker compose pull && docker com
 
 | Service | Port | Image |
 | --- | --- | --- |
+| PostgreSQL | - | postgres:16
 | IoT control unit (Node.js) | 3002 | `ghcr.io/dias266/spe-iot-control-unit` |
 | Multi-agent system (Java/Jason) | - | `ghcr.io/dias266/spe-mas` |
 | ML prediction (Python/Weka) | - | `ghcr.io/dias266/spe-ml-service` |
